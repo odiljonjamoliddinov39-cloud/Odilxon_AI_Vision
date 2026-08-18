@@ -1,3 +1,4 @@
+import { countIndividualBoxes } from "../stack/edge-instance-counter.js";
 ﻿import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -440,7 +441,12 @@ export class ModifiedDinoEngine {
     // IMPORTANT: child cells are evidence only. They are NOT returned as UI objects.
     for (let i = 0; i < roots.length; i++) {
       const root = roots[i];
-      const result = await decomposeStack(fullBuffer, root, imageSize, target);
+      const result = await countIndividualBoxes({
+  imageBuffer: fullBuffer,
+  root,
+  imageSize,
+  target,
+});
 
       const children = Array.isArray(result?.instances) ? result.instances : [];
 
