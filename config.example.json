@@ -1,0 +1,179 @@
+{
+  "port": 8080,
+  "nvr": {
+    "name": "Warehouse NVR",
+    "host": "192.168.1.64",
+    "port": 554,
+    "username": "username",
+    "password": "password",
+    "pathTemplate": "/Streaming/Channels/{channelCode}",
+    "timeoutMs": 15000
+  },
+  "channels": [
+    {
+      "id": 1,
+      "name": "Channel 1",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 2,
+      "name": "Channel 2",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 3,
+      "name": "Channel 3",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 4,
+      "name": "Channel 4",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 5,
+      "name": "Channel 5",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 6,
+      "name": "Channel 6",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 7,
+      "name": "Channel 7",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 8,
+      "name": "Channel 8",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 9,
+      "name": "Channel 9",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 10,
+      "name": "Channel 10",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 11,
+      "name": "Channel 11",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 12,
+      "name": "Channel 12",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 13,
+      "name": "Channel 13",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 14,
+      "name": "Channel 14",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 15,
+      "name": "Channel 15",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 16,
+      "name": "Channel 16",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 17,
+      "name": "Channel 17",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 18,
+      "name": "Channel 18",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 19,
+      "name": "Channel 19",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 20,
+      "name": "Channel 20",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 21,
+      "name": "Channel 21",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 22,
+      "name": "Channel 22",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 23,
+      "name": "Channel 23",
+      "enabled": true,
+      "stream": "main"
+    },
+    {
+      "id": 24,
+      "name": "Channel 24",
+      "enabled": true,
+      "stream": "main"
+    }
+  ],
+  "sampling": {
+    "enabled": false
+  },
+  "vision": {
+    "engine": "modified_dino",
+    "threshold": 0.35,
+    "debug": false,
+    "engines": {
+      "grounding_dino": {
+        "threshold": 0.35
+      },
+      "modified_dino": {
+        "threshold": 0.25,
+        "childThreshold": 0.12,
+        "maxDepth": 2,
+        "nmsIou": 0.42,
+        "margin": 0.04,
+        "minCropPixels": 80
+      }
+    }
+  }
+}

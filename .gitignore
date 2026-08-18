@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Local configuration / secrets
+config.json
+.env
+.env.*
+!.env.example
+
+# Runtime/generated data
+analysis-frames/
+data/
+
+# Archives
+*.zip
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Large AI model weights
+*.onnx
