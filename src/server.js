@@ -12,6 +12,16 @@ const ffmpegPath = resolveFfmpeg();
 const visionEngine = await createVisionEngine(cfg.vision.engine, cfg.vision.engines?.[cfg.vision.engine] || {});
 const channelStates = new Map(cfg.channels.map((channel) => [channel.id, "offline"]));
 const channelDiagnostics = new Map();
+const streamAnalyses = new Map();
+
+function stopStreamAnalysis(sessionId) {
+  const state = streamAnalyses.get(sessionId);
+  if (!state) return;
+  state.running = false;
+  clearTimeout(state.timer);
+  streamAnalyses.delete(sessionId);
+}
+
 const liveSessions = new LiveSessionManager({
   ffmpegPath,
   onStateChange: (session) => {
@@ -123,15 +133,60 @@ app.post("/api/live/:sessionId/captures", (req, res) => {
   res.status(201).json(frame);
 });
 
+app.post("/api/live/:sessionId/analyze/start", (req, res) => {
+  const session = liveSessions.get(req.params.sessionId);
+  if (!session) return res.status(404).json({ error: "Live session not found" });
+  stopStreamAnalysis(session.id);
+  const state = {
+    running: true, busy: false, result: null, error: null, analyzedFrameCount: 0,
+    target: String(req.body.target || "baget box").trim(),
+    threshold: req.body.threshold ?? cfg.vision.threshold,
+    timer: null,
+  };
+  streamAnalyses.set(session.id, state);
+  const tick = async () => {
+    if (!state.running) return;
+    if (!state.busy && session.latestFrame) {
+      state.busy = true;
+      try {
+        const result = await visionEngine.analyze({
+          frame: { buffer: Buffer.from(session.latestFrame), capturedAt: session.latestFrameAt },
+          instruction: { target: state.target, threshold: state.threshold, task: "inspect", options: {} },
+          debug: cfg.vision.debug,
+        });
+        state.result = { ...normalizeVisionResult(result), sourceFrameAt: session.latestFrameAt, sourceFrameCount: session.frameCount };
+        state.error = null;
+        state.analyzedFrameCount += 1;
+      } catch (error) { state.error = error.message; }
+      finally { state.busy = false; }
+    }
+    state.timer = setTimeout(tick, 100);
+    state.timer.unref?.();
+  };
+  tick();
+  res.status(201).json({ running: true, statusUrl: `/api/live/${session.id}/analyze` });
+});
+
+app.get("/api/live/:sessionId/analyze", (req, res) => {
+  const state = streamAnalyses.get(req.params.sessionId);
+  if (!state) return res.json({ running: false, result: null });
+  res.json({ running: state.running, busy: state.busy, analyzedFrameCount: state.analyzedFrameCount, error: state.error, result: state.result });
+});
+
+app.post("/api/live/:sessionId/analyze/stop", (req, res) => {
+  stopStreamAnalysis(req.params.sessionId);
+  res.status(204).end();
+});
+
 app.delete("/api/live/:sessionId", (req, res) => {
   const session = liveSessions.get(req.params.sessionId);
-  if (session) liveSessions.close("workspace closed");
+  if (session) { stopStreamAnalysis(session.id); liveSessions.close("workspace closed"); }
   res.status(204).end();
 });
 
 app.post("/api/live/:sessionId/close", (req, res) => {
   const session = liveSessions.get(req.params.sessionId);
-  if (session) liveSessions.close("workspace closed");
+  if (session) { stopStreamAnalysis(session.id); liveSessions.close("workspace closed"); }
   res.status(204).end();
 });
 

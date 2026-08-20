@@ -1,4 +1,4 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 
 const CONFIG_PATH = process.env.VISION_CONFIG || path.resolve("config.json");
@@ -33,16 +33,26 @@ export function sanitizeRtspUrl(value) {
 }
 
 export function loadConfig() {
-  if (!fs.existsSync(CONFIG_PATH))
+  if (!fs.existsSync(CONFIG_PATH)) {
     throw new Error(`Missing ${CONFIG_PATH}. Copy config.example.json to config.json.`);
+  }
+
   const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+
   if (!cfg.nvr?.host) throw new Error("config.json: nvr.host is required");
+
   cfg.port ||= 8080;
+
   cfg.nvr.port ||= 554;
   cfg.nvr.name ||= "NVR";
   cfg.nvr.timeoutMs ||= 15000;
   cfg.nvr.pathTemplate ||= "/Streaming/Channels/{channelCode}";
-  cfg.channels = Array.isArray(cfg.channels) && cfg.channels.length ? cfg.channels : defaultChannels(24);
+
+  cfg.channels =
+    Array.isArray(cfg.channels) && cfg.channels.length
+      ? cfg.channels
+      : defaultChannels(24);
+
   cfg.channels = cfg.channels.map((channel, index) => ({
     id: Number(channel.id || index + 1),
     rtspChannel: Number(channel.rtspChannel || channel.id || index + 1),
@@ -50,50 +60,29 @@ export function loadConfig() {
     enabled: channel.enabled !== false,
     stream: channel.stream === "sub" ? "sub" : "main",
   }));
-  // Backward compatibility with the project's existing "analysis" config.
-  // IMPORTANT: migrate BEFORE applying vision defaults, otherwise
-  // "grounding_dino" wins even when analysis.provider is "modified_dino".
+
   cfg.vision ||= {};
-  const legacyAnalysis = cfg.analysis || {};
-
-  if (!cfg.vision.engine && legacyAnalysis.provider) {
-    cfg.vision.engine = legacyAnalysis.provider;
-  }
-
-  if (cfg.vision.threshold == null && legacyAnalysis.openVocabularyThreshold != null) {
-    cfg.vision.threshold = legacyAnalysis.openVocabularyThreshold;
-  }
+  cfg.vision.engine = cfg.vision.engine || cfg.analysis?.provider || "none";
+  cfg.vision.threshold = numericThreshold(
+    cfg.vision.threshold ?? cfg.analysis?.openVocabularyThreshold,
+    0.35,
+  );
+  cfg.vision.debug =
+    cfg.vision.debug === true || cfg.analysis?.debug === true;
 
   cfg.vision.engines ||= {};
 
-  if (!cfg.vision.engines.modified_dino && legacyAnalysis.modifiedDino) {
-    cfg.vision.engines.modified_dino = { ...legacyAnalysis.modifiedDino };
-  }
-
-  cfg.vision.engine ||= "grounding_dino";
-  cfg.vision.threshold = numericThreshold(cfg.vision.threshold, 0.35);
-  cfg.vision.debug = cfg.vision.debug === true || legacyAnalysis.debug === true;
-
-  cfg.vision.engines.grounding_dino ||= {};
-  cfg.vision.engines.grounding_dino.threshold = numericThreshold(
-    cfg.vision.engines.grounding_dino.threshold,
-    cfg.vision.threshold,
-  );
-
-  cfg.vision.engines.modified_dino ||= {};
-  cfg.vision.engines.modified_dino.threshold = numericThreshold(
-    cfg.vision.engines.modified_dino.threshold,
-    cfg.vision.threshold,
-  );
   cfg.sampling ||= {};
   cfg.sampling.enabled = false;
+
   return cfg;
 }
 
 function numericThreshold(value, fallback) {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1
+    ? parsed
+    : fallback;
 }
 
 export { defaultChannels };
-

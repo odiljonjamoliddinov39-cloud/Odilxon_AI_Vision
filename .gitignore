@@ -26,3 +26,8 @@ Thumbs.db
 
 # Large AI model weights
 *.onnx
+
+# Large local model/source artifacts and captured videos
+mobileclip2_b.ts
+src/mobileclip2_b.ts
+src/*.mp4
