@@ -43,8 +43,8 @@ export class GroundingDinoEngine {
   }
 
   async analyze({ frame, instruction = {}, debug = false } = {}) {
-    const imagePath = typeof frame === "string" ? frame : frame?.filePath;
-    if (!imagePath) throw Object.assign(new Error("Vision engine requires a persisted frame."), { status: 400 });
+    const imageSource = typeof frame === "string" ? frame : frame?.filePath || frame?.buffer;
+    if (!imageSource) throw Object.assign(new Error("Vision engine requires frame.filePath or frame.buffer."), { status: 400 });
 
     const target = String(instruction.target || "").trim();
     if (!target) throw Object.assign(new Error("Grounding DINO requires instruction.target."), { status: 400 });
@@ -53,10 +53,10 @@ export class GroundingDinoEngine {
       ? clamp(Number(instruction.threshold), 0, 1)
       : this.threshold;
 
-    const metadata = await sharp(imagePath).metadata();
+    const metadata = await sharp(imageSource).metadata();
     if (!metadata.width || !metadata.height) throw new Error("Unable to read frame dimensions.");
 
-    const pixels = await sharp(imagePath).toColourspace("srgb").removeAlpha().raw().toBuffer();
+    const pixels = await sharp(imageSource).toColourspace("srgb").removeAlpha().raw().toBuffer();
     const { detector, RawImage } = await loadPipeline(this.modelDirectory);
     const image = new RawImage(new Uint8Array(pixels), metadata.width, metadata.height, 3);
     const prompt = `${target.toLowerCase().replace(/[.\s]+$/u, "")}.`;

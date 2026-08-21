@@ -1,5 +1,6 @@
 import * as ort from "onnxruntime-node";
 import sharp from "sharp";
+import fs from "node:fs";
 import path from "node:path";
 
 export class Yolo26Engine {
@@ -51,10 +52,11 @@ export class Yolo26Engine {
         : input?.frame?.buffer ||
           input?.buffer ||
           input?.jpeg ||
-          input?.image;
+          input?.image ||
+          (input?.frame?.filePath ? fs.readFileSync(input.frame.filePath) : null);
 
     if (!jpeg) {
-      throw new Error("YOLO26 analyze() requires a JPEG Buffer");
+      throw new Error("YOLO26 analyze() requires a JPEG Buffer or frame.filePath");
     }
 
     const { data } = await sharp(jpeg)

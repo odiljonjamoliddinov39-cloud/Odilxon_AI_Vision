@@ -1,4 +1,4 @@
-﻿export class NoVisionEngine {
+export class NoVisionEngine {
   constructor() {
     this.name = "none";
   }

@@ -15,11 +15,11 @@
 </head>
 <body>
   <main id="home">
-    <div class="topbar"><div><h1>NVR Camera Grid</h1><p class="subtle">24 configured channels Â· previews use short-lived, controlled requests</p></div><button id="refreshAll">Refresh previews</button></div>
+    <div class="topbar"><div><h1>NVR Camera Grid</h1><p class="subtle">24 configured channels · previews use short-lived, controlled requests</p></div><button id="refreshAll">Refresh previews</button></div>
     <div id="grid" class="grid"></div>
   </main>
   <main id="workspace" class="workspace hidden">
-    <div class="topbar"><button id="back">â† All cameras</button><span id="provider" class="subtle"></span></div>
+    <div class="topbar"><button id="back">← All cameras</button><span id="provider" class="subtle"></span></div>
     <section class="panel"><div class="camera-title"><div><h1 id="workspaceTitle"></h1><span id="workspaceState" class="badge">offline</span> <span id="frameCounter" class="subtle"></span></div><button id="refreshCurrent">Reconnect live preview</button></div><div class="analysis-image"><img id="livePreview" class="hero" alt="Continuous live camera preview"><canvas id="boxes"></canvas></div><pre id="diagnostics" class="hidden"></pre></section>
     <section class="panel"><div class="actions"><div><h2>Live Video Analysis</h2><p class="subtle">Vision engine analyzes frames directly from the running RTSP stream.</p></div><button id="analyze">Start Analyze</button></div><div class="actions"><label>Target <input id="analysisTarget" maxlength="120" value="baget box" placeholder="baget box"></label><label>Threshold <input id="analysisThreshold" type="number" min="0" max="1" step="0.05" value="0.35"></label></div><div id="counts" class="counts"></div><p id="result" class="subtle">Ready for live analysis.</p></section>
   </main>
@@ -28,13 +28,13 @@
     let channels=[],activeChannel=null,visionEngine="none",threshold=0.35,liveSession=null,statusTimer=null,analysisTimer=null,analysisRunning=false;
     function setState(element,state){element.textContent=state;element.classList.toggle("online",state==="online")}
     async function loadConfig(){const [channelResponse,healthResponse]=await Promise.all([fetch("/api/channels"),fetch("/api/health")]);if(!channelResponse.ok)throw new Error("Backend is not running. Restart the application.");channels=await channelResponse.json();const health=await healthResponse.json();visionEngine=health.vision?.engine||"none";threshold=health.vision?.threshold??0.35;document.querySelector("#provider").textContent=`Vision engine: ${visionEngine}`;document.querySelector("#analysisThreshold").value=threshold;renderGrid()}
-    function renderGrid(){grid.innerHTML=channels.map(channel=>`<article class="camera" data-channel="${channel.id}"><img class="camera-preview" alt="Latest preview for ${channel.name}"><div class="camera-body"><div class="camera-title"><div><strong>${channel.name}</strong><div class="subtle">Grid position ${channel.id}${channel.rtspChannel!==channel.id?` Â· NVR channel ${channel.rtspChannel}`:""}</div></div><span class="badge state">${channel.state}</span></div><div class="actions"><button class="preview">Refresh</button><button class="open">Open</button></div></div></article>`).join("")}
+    function renderGrid(){grid.innerHTML=channels.map(channel=>`<article class="camera" data-channel="${channel.id}"><img class="camera-preview" alt="Latest preview for ${channel.name}"><div class="camera-body"><div class="camera-title"><div><strong>${channel.name}</strong><div class="subtle">Grid position ${channel.id}${channel.rtspChannel!==channel.id?` · NVR channel ${channel.rtspChannel}`:""}</div></div><span class="badge state">${channel.state}</span></div><div class="actions"><button class="preview">Refresh</button><button class="open">Open</button></div></div></article>`).join("")}
     async function refreshCard(channel){const card=grid.querySelector(`[data-channel="${channel.id}"]`),image=card.querySelector("img"),state=card.querySelector(".state");setState(state,"loading");return new Promise(resolve=>{image.onload=()=>{setState(state,"online");resolve()};image.onerror=()=>{setState(state,"offline");resolve()};image.src=`${channel.previewUrl}?t=${Date.now()}`})}
     async function controlledRefresh(){document.querySelector("#refreshAll").disabled=true;for(let index=0;index<channels.length;index+=2)await Promise.all(channels.slice(index,index+2).map(refreshCard));document.querySelector("#refreshAll").disabled=false}
     grid.addEventListener("click",event=>{const card=event.target.closest("[data-channel]");if(!card)return;const channel=channels.find(item=>item.id===Number(card.dataset.channel));if(event.target.closest(".preview"))refreshCard(channel);if(event.target.closest(".open"))openChannel(channel.id)});
-    async function openChannel(id){const next=channels.find(channel=>channel.id===Number(id));if(!next)return;await closeLive();activeChannel=next;history.pushState({},"",`?channel=${id}`);home.classList.add("hidden");workspace.classList.remove("hidden");document.querySelector("#workspaceTitle").textContent=`${activeChannel.name} Â· Grid position ${id}`;stopAnalysisPolling();clearDetections();document.querySelector("#counts").innerHTML="";document.querySelector("#result").textContent="Ready for live analysis.";await startLive()}
+    async function openChannel(id){const next=channels.find(channel=>channel.id===Number(id));if(!next)return;await closeLive();activeChannel=next;history.pushState({},"",`?channel=${id}`);home.classList.add("hidden");workspace.classList.remove("hidden");document.querySelector("#workspaceTitle").textContent=`${activeChannel.name} · Grid position ${id}`;stopAnalysisPolling();clearDetections();document.querySelector("#counts").innerHTML="";document.querySelector("#result").textContent="Ready for live analysis.";await startLive()}
     async function startLive(){const state=document.querySelector("#workspaceState"),diagnostics=document.querySelector("#diagnostics");setState(state,"connecting");diagnostics.classList.add("hidden");diagnostics.textContent="";const response=await fetch(`/api/channels/${activeChannel.id}/live`,{method:"POST"});const body=await response.json();if(!response.ok){setState(state,"offline");diagnostics.classList.remove("hidden");diagnostics.textContent=body.error;return}liveSession=body;const image=document.querySelector("#livePreview");image.onload=()=>setState(state,"online");image.onerror=()=>pollStatus(true);image.src=`${body.streamUrl}?t=${Date.now()}`;clearInterval(statusTimer);statusTimer=setInterval(()=>pollStatus(false),1000);await pollStatus(false)}
-    async function pollStatus(forceDiagnostics){if(!liveSession)return;const response=await fetch(liveSession.statusUrl);if(!response.ok)return;const status=await response.json();setState(document.querySelector("#workspaceState"),status.state);document.querySelector("#frameCounter").textContent=status.frameCount?`${status.frameCount} decoded frames Â· latest ${new Date(status.latestFrameAt).toLocaleTimeString()}`:"waiting for first frame";if(forceDiagnostics||status.state==="error"||activeChannel.id===11)await showDiagnostics(status)}
+    async function pollStatus(forceDiagnostics){if(!liveSession)return;const response=await fetch(liveSession.statusUrl);if(!response.ok)return;const status=await response.json();setState(document.querySelector("#workspaceState"),status.state);document.querySelector("#frameCounter").textContent=status.frameCount?`${status.frameCount} decoded frames · latest ${new Date(status.latestFrameAt).toLocaleTimeString()}`:"waiting for first frame";if(forceDiagnostics||status.state==="error"||activeChannel.id===11)await showDiagnostics(status)}
     async function showDiagnostics(liveStatus){const response=await fetch(`/api/channels/${activeChannel.id}/diagnostics`),body=await response.json(),panel=document.querySelector("#diagnostics");panel.classList.remove("hidden");panel.textContent=JSON.stringify({...body,live:liveStatus||body.live},null,2)}
     async function closeLive(){clearInterval(statusTimer);statusTimer=null;document.querySelector("#livePreview").removeAttribute("src");if(!liveSession)return;const closing=liveSession;stopAnalysisPolling();liveSession=null;try{await fetch(`/api/live/${closing.id}`,{method:"DELETE",keepalive:true})}catch{}}
     function clearDetections(){const canvas=document.querySelector("#boxes"),image=document.querySelector("#livePreview");canvas.width=image.naturalWidth||1;canvas.height=image.naturalHeight||1;canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);document.querySelector("#counts").innerHTML=""}
@@ -50,12 +50,12 @@
       const target=document.querySelector("#analysisTarget").value.trim();
       const threshold=Number(document.querySelector("#analysisThreshold").value);
       if(!target){document.querySelector("#result").textContent="Enter a target.";return}
-      button.disabled=true; button.textContent="Startingâ€¦";
+      button.disabled=true; button.textContent="Starting…";
       const response=await fetch(`/api/live/${liveSession.id}/analyze/start`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target,threshold})});
       const body=await response.json(); button.disabled=false;
       if(!response.ok){document.querySelector("#result").textContent=body.error;button.textContent="Start Analyze";return}
       analysisRunning=true; button.textContent="Stop Analyze";
-      document.querySelector("#result").textContent=`${visionEngine} is analyzing the live videoâ€¦`;
+      document.querySelector("#result").textContent=`${visionEngine} is analyzing the live video…`;
       analysisTimer=setInterval(pollAnalysis,300);
       pollAnalysis();
     };
@@ -68,7 +68,7 @@
         const r=body.result,detections=(r.objects||[]).map(o=>({label:o.label,confidence:o.confidence,bbox:o.bbox}));
         drawDetections(detections);
         document.querySelector("#counts").innerHTML=`<span class="count">BOX COUNT: ${r.count}</span>`;
-        document.querySelector("#result").textContent=`LIVE Â· ${r.count} Â· ${r.inferenceMs} ms Â· analyzed ${body.analyzedFrameCount} frames`;
+        document.querySelector("#result").textContent=`LIVE · ${r.count} · ${r.inferenceMs} ms · analyzed ${body.analyzedFrameCount} frames`;
       }catch{}
     }
     function stopAnalysisPolling(){clearInterval(analysisTimer);analysisTimer=null;analysisRunning=false;const b=document.querySelector("#analyze");if(b)b.textContent="Start Analyze"}

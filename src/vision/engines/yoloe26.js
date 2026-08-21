@@ -1,4 +1,5 @@
-﻿import { spawn } from "node:child_process";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 
@@ -9,7 +10,8 @@ export class YoloE26Engine {
 
     this.python =
       config.python ||
-      "C:\\Python314\\python.exe";
+      process.env.YOLOE26_PYTHON ||
+      (process.platform === "win32" ? "python.exe" : "python3");
 
     this.script =
       config.script ||
@@ -171,11 +173,12 @@ export class YoloE26Engine {
         : input?.frame?.buffer ||
           input?.buffer ||
           input?.jpeg ||
-          input?.image;
+          input?.image ||
+          (input?.frame?.filePath ? fs.readFileSync(input.frame.filePath) : null);
 
     if (!Buffer.isBuffer(jpeg)) {
       throw new Error(
-        "YOLOE26 requires JPEG Buffer"
+        "YOLOE26 requires a JPEG Buffer or frame.filePath"
       );
     }
 

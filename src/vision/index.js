@@ -1,4 +1,4 @@
-﻿import {
+import {
   createVisionEngine,
   listVisionEngines,
   normalizeVisionResult,
@@ -17,6 +17,14 @@ import {
   YoloE26Engine
 } from "./engines/yoloe26.js";
 
+import {
+  GroundingDinoEngine
+} from "./engines/grounding-dino.js";
+
+import {
+  ModifiedDinoEngine
+} from "./engines/modified-dino.js";
+
 
 registerVisionEngine(
   "none",
@@ -33,6 +41,18 @@ registerVisionEngine(
   "yoloe26",
   (config) =>
     new YoloE26Engine(config)
+);
+
+registerVisionEngine(
+  "grounding_dino",
+  (config) =>
+    new GroundingDinoEngine(config)
+);
+
+registerVisionEngine(
+  "modified_dino",
+  (config) =>
+    new ModifiedDinoEngine(config)
 );
 
 
