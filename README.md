@@ -6,9 +6,10 @@ JavaScript NVR workspace with controlled per-channel previews and immutable manu
 
 1. Copy `config.example.json` to `config.json` and configure the NVR connection once.
 2. Configure channel names and main/sub streams in `channels`.
-3. Install dependencies with `npm.cmd install`.
-4. Run `npm.cmd run smoke` to test Channel 24, or set `VISION_CHANNEL`.
-5. Run `npm.cmd start` and open `http://localhost:8080`.
+3. Install Node dependencies with `npm.cmd install`.
+4. The default vision engine is `yoloe26` — install its Python dependencies with `pip install -r requirements.txt` and see the [Vision engines](#vision-engines) section below for its one-time model setup before running analysis.
+5. Run `npm.cmd run smoke` to test Channel 24, or set `VISION_CHANNEL`.
+6. Run `npm.cmd start` and open `http://localhost:8080`.
 
 RTSP URLs are generated at runtime from `nvr` plus each channel's ID and stream. The camera grid uses the existing one-shot `FrameSource.snapshot()` path and does not keep 24 permanent FFmpeg processes.
 
@@ -42,9 +43,14 @@ Every engine's `analyze({ frame, instruction, debug })` accepts a captured frame
 
 - **`none`** (`src/vision/engines/none.js`) — no-op engine; always returns zero objects. Default when `vision.engine` is unset.
 
-- **`grounding_dino`** (`src/vision/engines/grounding-dino.js`) — stock open-vocabulary detection using Apache-2.0 `onnx-community/grounding-dino-tiny-ONNX` through `@huggingface/transformers`, CPU-only, remote model loading disabled at runtime. Install its local assets once with `npm run model:install-open-vocabulary` (downloads into `models/grounding-dino-tiny-ONNX/`, SHA-256-verified). The runtime target is normalized to Grounding DINO's lowercase, period-terminated query; returned boxes are clamped to the captured image.
+- **`yoloe26`** (`src/vision/engines/yoloe26.js`) — open-vocabulary segmentation via Ultralytics YOLOE, run out-of-process through `src/yoloe_service.py`. Node spawns a persistent Python subprocess and exchanges newline-delimited JSON over stdio (JPEG bytes in, detections out). This is the default engine in `config.example.json`.
 
-- **`yoloe26`** (`src/vision/engines/yoloe26.js`) — open-vocabulary segmentation via Ultralytics YOLOE, run out-of-process through `src/yoloe_service.py`. Node spawns a persistent Python subprocess and exchanges newline-delimited JSON over stdio (JPEG bytes in, detections out). Requires Python 3 with `ultralytics`, `opencv-python`, and `numpy` installed, plus `yoloe-26n-seg.pt` at the repo root (already included). The Python interpreter defaults to `python3` (`python.exe` on Windows) resolved from `PATH`; override with `vision.engines.yoloe26.python` or the `YOLOE26_PYTHON` environment variable. This is the default engine in `config.example.json`.
+  Setup:
+  1. Python 3 with `pip install -r requirements.txt` (`ultralytics`, `opencv-python-headless`, `numpy`).
+  2. `yoloe-26n-seg.pt` at the repo root (already included in this repo).
+  3. `mobileclip2_b.ts` at the repo root — the MobileCLIP text encoder `set_classes()` uses to embed the class prompts. It is **not** in the repo (253 MB, gitignored). Ultralytics auto-downloads it on first run from `https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip2_b.ts`; if that fails (blocked network, restricted proxy), download it manually with that same URL and place it at the repo root. The first run may also `pip`-install `git+https://github.com/ultralytics/CLIP.git` on its own — expect first-run setup to need outbound internet access even when subsequent runs don't.
+
+  The Python interpreter defaults to `python3` (`python.exe` on Windows) resolved from `PATH`; override with `vision.engines.yoloe26.python` or the `YOLOE26_PYTHON` environment variable.
 
 - **`grounding_dino`** (`src/vision/engines/grounding-dino.js`) — stock open-vocabulary detection using Apache-2.0 `onnx-community/grounding-dino-tiny-ONNX` through `@huggingface/transformers`, CPU-only, remote model loading disabled at runtime. Install its local assets once with `npm run model:install-open-vocabulary` (downloads into `models/grounding-dino-tiny-ONNX/`, SHA-256-verified). The runtime target is normalized to Grounding DINO's lowercase, period-terminated query; returned boxes are clamped to the captured image.
 
