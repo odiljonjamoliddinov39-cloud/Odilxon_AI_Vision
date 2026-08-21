@@ -6,9 +6,10 @@ JavaScript NVR workspace with controlled per-channel previews and immutable manu
 
 1. Copy `config.example.json` to `config.json` and configure the NVR connection once.
 2. Configure channel names and main/sub streams in `channels`.
-3. Install dependencies with `npm.cmd install`.
-4. Run `npm.cmd run smoke` to test Channel 24, or set `VISION_CHANNEL`.
-5. Run `npm.cmd start` and open `http://localhost:8080`.
+3. Install Node dependencies with `npm.cmd install`.
+4. The default vision engine is `yoloe26` — install its Python dependencies with `pip install -r requirements.txt` and see the [Vision engines](#vision-engines) section below for its one-time model setup before running analysis.
+5. Run `npm.cmd run smoke` to test Channel 24, or set `VISION_CHANNEL`.
+6. Run `npm.cmd start` and open `http://localhost:8080`.
 
 RTSP URLs are generated at runtime from `nvr` plus each channel's ID and stream. The camera grid uses the existing one-shot `FrameSource.snapshot()` path and does not keep 24 permanent FFmpeg processes.
 
@@ -20,26 +21,54 @@ Manual Capture Frame copies the latest in-memory frame from the active live sess
 
 `GET /api/channels/:id/diagnostics` returns credential-free main/sub RTSP URLs, channel codes, live-session state, the latest FFmpeg error, and retained FFmpeg stderr. Channel 11 therefore reports generated codes `1101` and `1102` plus the underlying failure when decoding fails.
 
-## Local object analysis
+## Vision engines
 
-Analysis uses the local `SSD-MobileNetV1-12` ONNX Model Zoo detector through `onnxruntime-node` on CPU. The model file is `models/ssd_mobilenet_v1_12.onnx` (29,461,455 bytes, SHA-256 `b8fba5e404077d4048d27fcd1667e85e27e192eb9bf51e696c46a3acd7d21058`). Once dependencies and this file are installed, inference requires no internet connection or API key.
+Analysis runs through a pluggable engine registry (`src/vision/index.js`, `src/vision/engine.js`). `config.json` selects one engine under `vision.engine`, with per-engine options under `vision.engines.<name>`. Only the selected engine's module is imported (lazily, inside its factory) — `yolo26`'s `onnxruntime-node` and `grounding_dino`/`modified_dino`'s bundled `onnxruntime-node` (pulled in via `@huggingface/transformers`) are two different native builds that crash with a shared-library version conflict if both load into the same process, so importing every engine eagerly at startup is not safe.
 
-`analyze(frame, caseConfig)` is implemented in `src/analyzer.js`. Select `local_closed_class` to use SSD-MobileNetV1-12. Sharp decodes the captured image, converts it to sRGB, removes alpha, and resizes to 300×300 RGB. A uint8 NHWC tensor `[1,300,300,3]` is passed to ONNX Runtime. The model returns normalized `[ymin,xmin,ymax,xmax]` boxes, COCO category IDs, confidence scores, and detection count. Results below the configured confidence threshold are removed; retained boxes are clamped and scaled back to the original captured image width and height. Counts are derived directly from those retained detections.
+```json
+"vision": {
+  "engine": "yoloe26",
+  "threshold": 0.10,
+  "debug": false,
+  "engines": {
+    "yoloe26": { "threshold": 0.10 },
+    "grounding_dino": { "threshold": 0.35 },
+    "modified_dino": { "threshold": 0.25, "nmsIou": 0.42 },
+    "yolo26": { "threshold": 0.35 }
+  }
+}
+```
 
-Supported classes are the model's 80 MS COCO categories and are exported explicitly as `SUPPORTED_CLASSES` in `src/analyzer.js`. Industrial concepts outside that vocabulary—including box, pallet, machine, sack, and PPE state—are not renamed or invented.
+Every engine's `analyze({ frame, instruction, debug })` accepts a captured frame as either `frame.filePath` (from `/api/analyze`, an immutable capture) or `frame.buffer` (from the live continuous-analysis loop) — both endpoints work with every engine.
 
-Automatic sampling is disabled and the legacy sampling modules are not wired into the server.
+- **`none`** (`src/vision/engines/none.js`) — no-op engine; always returns zero objects. Default when `vision.engine` is unset.
 
-## Open-vocabulary analysis
+- **`yoloe26`** (`src/vision/engines/yoloe26.js`) — open-vocabulary segmentation via Ultralytics YOLOE, run out-of-process through `src/yoloe_service.py`. Node spawns a persistent Python subprocess and exchanges newline-delimited JSON over stdio (JPEG bytes in, detections out). This is the default engine in `config.example.json`.
 
-Select `open_vocabulary` and enter one runtime object target. This provider uses Apache-2.0 licensed `onnx-community/grounding-dino-tiny-ONNX` through `@huggingface/transformers`. Install its local assets once with `pnpm.cmd run model:install-open-vocabulary`. The quantized ONNX file is `models/grounding-dino-tiny-ONNX/onnx/model_quantized.onnx` (203,824,675 bytes, SHA-256 `70bf2d3310d1ae73769c96a71e00cbf2861eb33a1f4d97d84a108a7bf02c03c9`). Tokenizer and processor configuration are stored beside it.
+  Setup:
+  1. Python 3 with `pip install -r requirements.txt` (`ultralytics`, `opencv-python-headless`, `numpy`).
+  2. `yoloe-26n-seg.pt` at the repo root (already included in this repo).
+  3. `mobileclip2_b.ts` at the repo root — the MobileCLIP text encoder `set_classes()` uses to embed the class prompts. It is **not** in the repo (253 MB, gitignored). Ultralytics auto-downloads it on first run from `https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip2_b.ts`; if that fails (blocked network, restricted proxy), download it manually with that same URL and place it at the repo root. The first run may also `pip`-install `git+https://github.com/ultralytics/CLIP.git` on its own — expect first-run setup to need outbound internet access even when subsequent runs don't.
 
-At runtime, remote model loading is disabled. The submitted target is normalized to Grounding DINO's required lowercase, period-terminated query. Transformers.js performs the model's 800×800 image preprocessing and grounded detection postprocessing. Its returned boxes are original-image pixel coordinates; the application clamps them to the captured image and performs greedy, same-label IoU NMS before deriving counts. Default thresholds are configurable under `analysis` in `config.json`.
+  The Python interpreter defaults to `python3` (`python.exe` on Windows) resolved from `PATH`; override with `vision.engines.yoloe26.python` or the `YOLOE26_PYTHON` environment variable.
 
-Measured on this Windows machine against stored NVR frame `frm_1786784067016_9epfl.jpg`: target `pallet` produced two retained detections in 5,092 ms at threshold 0.25, then target `white sack` produced six in 6,444 ms in the same Node process. Results depend on the frame, target wording, threshold, and hardware; a zero-result response remains valid and is never replaced with guessed detections.
+- **`grounding_dino`** (`src/vision/engines/grounding-dino.js`) — stock open-vocabulary detection using Apache-2.0 `onnx-community/grounding-dino-tiny-ONNX` through `@huggingface/transformers`, CPU-only, remote model loading disabled at runtime. Install its local assets once with `npm run model:install-open-vocabulary` (downloads into `models/grounding-dino-tiny-ONNX/`, SHA-256-verified). The runtime target is normalized to Grounding DINO's lowercase, period-terminated query; returned boxes are clamped to the captured image.
 
-### Optional individual-instance counting evaluation
+- **`modified_dino`** (`src/vision/engines/modified-dino.js`) — the same Grounding DINO model, but each detected stack region is re-analyzed with an edge/seam decomposition pass (`src/vision/stack/edge-instance-counter.js`) that looks for carton boundaries inside the region and splits a stack into individual physical-item counts instead of counting it as one object. It never invents boxes: a stack is only split when at least two non-duplicate child boxes have real edge evidence. See `MODIFIED_DINO_README.md` for the full algorithm and tuning knobs (`childThreshold`, `maxDepth`, `nmsIou`, `margin`, `minCropPixels`). Requires the same `models/grounding-dino-tiny-ONNX/` assets as `grounding_dino`.
 
-The workspace can run the entered target through four prompts: `{target}`, `individual {target}`, `single {target}`, and `each {target}`. Candidate boxes from all four real inferences are confidence-sorted and merged with configurable same-target IoU NMS; they are never summed blindly and no boxes are synthesized. The response includes `target`, retained `detections`, `count`, `promptUsed`, and total model `inferenceMs`, while retaining `counts` and `totalCount` for the existing workspace renderer.
+- **`yolo26`** (`src/vision/engines/yolo26.js`) — local closed-vocabulary detection via `onnxruntime-node`, expecting an ONNX export at `models/yolo26/yolo26n.onnx`. This project ships the Ultralytics checkpoint `yolo26n.pt` at the repo root but **not** an ONNX export — convert it yourself (e.g. `yolo export model=yolo26n.pt format=onnx`) and place the result at that path before selecting this engine.
 
-Evaluation at confidence 0.20 and NMS IoU 0.50 on real NVR imagery found that this Grounding DINO Tiny model is not a reliable carton instance counter in dense stacks. A current immutable frame containing dozens of visible cardboard cartons produced 6 retained detections in 60,861 ms; its strongest box covered a palletized group rather than one carton. On a separate NVR frame containing isolated and grouped white sacks, it produced 12 retained boxes in 25,493 ms, but mixed individual-sack boxes with larger group boxes, so the returned count double-represented some objects. The mode exposes the model's genuine boxes for evaluation, but its count must not be interpreted as ground truth when targets overlap or form stacks.
+Automatic background sampling is disabled; `src/frame-sampler.js` and `src/store.js` are legacy modules not wired into the server.
+
+`research/groundingdino-upstream/` vendors the upstream Grounding DINO Python source for reference during model research and is not imported by the running app.
+
+## Building a fine-tuning dataset
+
+`yolo26`/`yoloe26` ship as generic checkpoints and don't know what a `baget box` looks like on sight — closed-vocabulary detection needs a model fine-tuned on real labeled photos, and `yoloe26`'s open-vocabulary text prompts consistently undercount dense stacks (validated: recall as low as ~20-30% on stacks of 40+ items). Improving that requires real annotated training data. Workflow:
+
+1. Annotate real photos in [CVAT](https://cvat.ai): draw a box around every individual item, one label class.
+2. Export the task with images included (**Ultralytics YOLO Detection** format bundles images by default; the plain "CVAT for images 1.1" XML export does not unless "Save images" is explicitly checked).
+3. `python3 scripts/prelabel_images.py <new_images_dir> <output_dir>` generates draft candidate boxes for a new batch of *unlabeled* images using `yoloe26`, so annotation in CVAT becomes correcting a draft instead of drawing every box from scratch. Import the output (`obj.names` + `labels/*.txt`, YOLO format) into a CVAT task as pre-annotations. Treat the drafts as a rough starting point, not ground truth — review every image, especially dense stacks, where the model's recall is worst and drafts will be mostly wrong or missing.
+4. Fine-tune a checkpoint (e.g. `yolo26n.pt`) on the combined, human-corrected dataset with `ultralytics`' `model.train()`, holding out a slice of images never seen during training to get an honest per-image accuracy read rather than trusting training loss alone.
+
+Photo variety (different stacks, angles, lighting, densities) matters more than raw image count — many near-duplicate frames of the same stack teach the model little it doesn't already know from the first few.

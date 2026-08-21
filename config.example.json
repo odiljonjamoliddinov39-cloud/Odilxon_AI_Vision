@@ -159,10 +159,13 @@
     "enabled": false
   },
   "vision": {
-    "engine": "modified_dino",
-    "threshold": 0.35,
+    "engine": "yoloe26",
+    "threshold": 0.10,
     "debug": false,
     "engines": {
+      "yoloe26": {
+        "threshold": 0.10
+      },
       "grounding_dino": {
         "threshold": 0.35
       },

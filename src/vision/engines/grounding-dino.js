@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,8 +9,19 @@ const DEFAULT_MODEL_DIR = fileURLToPath(new URL("../../../models/grounding-dino-
 
 let pipelinePromise;
 
+function assertModelInstalled(modelDirectory) {
+  const modelFile = path.join(modelDirectory, "onnx", "model_quantized.onnx");
+  if (!fs.existsSync(modelFile)) {
+    throw new Error(
+      `Grounding DINO model weights are not installed. Expected ${modelFile}. ` +
+      `Run "npm run model:install-open-vocabulary" to download them (~203 MB, requires internet access).`,
+    );
+  }
+}
+
 async function loadPipeline(modelDirectory) {
   pipelinePromise ||= (async () => {
+    assertModelInstalled(modelDirectory);
     const { env, pipeline, RawImage } = await import("@huggingface/transformers");
     env.allowRemoteModels = false;
     env.allowLocalModels = true;
@@ -20,7 +32,13 @@ async function loadPipeline(modelDirectory) {
       { dtype: "q8", device: "cpu" },
     );
     return { detector, RawImage };
-  })();
+  })().catch((error) => {
+    // Don't memoize a failure: if the model wasn't installed yet, a later
+    // call (after the user runs the install script) should retry instead
+    // of replaying the same rejected promise for the life of the process.
+    pipelinePromise = undefined;
+    throw error;
+  });
   return pipelinePromise;
 }
 
@@ -43,8 +61,8 @@ export class GroundingDinoEngine {
   }
 
   async analyze({ frame, instruction = {}, debug = false } = {}) {
-    const imagePath = typeof frame === "string" ? frame : frame?.filePath;
-    if (!imagePath) throw Object.assign(new Error("Vision engine requires a persisted frame."), { status: 400 });
+    const imageSource = typeof frame === "string" ? frame : frame?.filePath || frame?.buffer;
+    if (!imageSource) throw Object.assign(new Error("Vision engine requires frame.filePath or frame.buffer."), { status: 400 });
 
     const target = String(instruction.target || "").trim();
     if (!target) throw Object.assign(new Error("Grounding DINO requires instruction.target."), { status: 400 });
@@ -53,10 +71,10 @@ export class GroundingDinoEngine {
       ? clamp(Number(instruction.threshold), 0, 1)
       : this.threshold;
 
-    const metadata = await sharp(imagePath).metadata();
+    const metadata = await sharp(imageSource).metadata();
     if (!metadata.width || !metadata.height) throw new Error("Unable to read frame dimensions.");
 
-    const pixels = await sharp(imagePath).toColourspace("srgb").removeAlpha().raw().toBuffer();
+    const pixels = await sharp(imageSource).toColourspace("srgb").removeAlpha().raw().toBuffer();
     const { detector, RawImage } = await loadPipeline(this.modelDirectory);
     const image = new RawImage(new Uint8Array(pixels), metadata.width, metadata.height, 3);
     const prompt = `${target.toLowerCase().replace(/[.\s]+$/u, "")}.`;

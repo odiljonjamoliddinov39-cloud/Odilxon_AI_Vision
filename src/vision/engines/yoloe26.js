@@ -1,4 +1,6 @@
-﻿import { spawn } from "node:child_process";
+import { spawn } from "node:child_process";
+import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 
@@ -6,17 +8,26 @@ export class YoloE26Engine {
   constructor(config = {}) {
     this.name = "yoloe26";
     this.threshold = Number(config.threshold ?? 0.10);
+    this.timeoutMs = Number(config.timeoutMs ?? 60000);
 
     this.python =
       config.python ||
-      "C:\\Python314\\python.exe";
+      process.env.YOLOE26_PYTHON ||
+      (process.platform === "win32" ? "python.exe" : "python3");
 
     this.script =
       config.script ||
       path.resolve("src", "yoloe_service.py");
 
     this.process = null;
-    this.pending = [];
+    // Keyed by request id, not FIFO order: Python is a single-threaded
+    // sequential consumer, so a request that outlives this engine's own
+    // timeout (e.g. a slow cold-start inference) does not stop Python from
+    // eventually finishing and writing a response. Matching by id means a
+    // late response either finds nothing (harmlessly dropped) instead of
+    // being misattributed to a different, still-pending request that
+    // happened to be first in a shift()-based queue.
+    this.pending = new Map();
     this.starting = null;
   }
 
@@ -67,15 +78,16 @@ export class YoloE26Engine {
           return;
         }
 
-        const job = this.pending.shift();
+        const job = this.pending.get(result.id);
 
         if (!job) {
           console.log(
-            "[YOLOE26] response with no pending request"
+            `[YOLOE26] response for unknown or already-timed-out request ${result.id ?? "(no id)"}`
           );
           return;
         }
 
+        this.pending.delete(result.id);
         clearTimeout(job.timer);
 
         if (result.error) {
@@ -132,10 +144,7 @@ export class YoloE26Engine {
           this.process = null;
           this.starting = null;
 
-          while (this.pending.length) {
-            const job =
-              this.pending.shift();
-
+          for (const job of this.pending.values()) {
             clearTimeout(job.timer);
 
             job.reject(
@@ -144,6 +153,8 @@ export class YoloE26Engine {
               )
             );
           }
+
+          this.pending.clear();
         }
       );
     });
@@ -171,11 +182,12 @@ export class YoloE26Engine {
         : input?.frame?.buffer ||
           input?.buffer ||
           input?.jpeg ||
-          input?.image;
+          input?.image ||
+          (input?.frame?.filePath ? fs.readFileSync(input.frame.filePath) : null);
 
     if (!Buffer.isBuffer(jpeg)) {
       throw new Error(
-        "YOLOE26 requires JPEG Buffer"
+        "YOLOE26 requires a JPEG Buffer or frame.filePath"
       );
     }
 
@@ -183,34 +195,26 @@ export class YoloE26Engine {
       `[YOLOE26] analyzing ${jpeg.length} bytes`
     );
 
+    const id = crypto.randomUUID();
+
     const result =
       await new Promise(
         (resolve, reject) => {
 
           const timer = setTimeout(
             () => {
-              const index =
-                this.pending.findIndex(
-                  x => x.timer === timer
-                );
-
-              if (index >= 0) {
-                this.pending.splice(
-                  index,
-                  1
-                );
-              }
+              this.pending.delete(id);
 
               reject(
                 new Error(
-                  "YOLOE26 inference timed out after 30s"
+                  `YOLOE26 inference timed out after ${this.timeoutMs}ms`
                 )
               );
             },
-            30000
+            this.timeoutMs
           );
 
-          this.pending.push({
+          this.pending.set(id, {
             resolve,
             reject,
             timer
@@ -218,6 +222,8 @@ export class YoloE26Engine {
 
           const payload =
             JSON.stringify({
+              id,
+
               image:
                 jpeg.toString("base64"),
 
@@ -230,6 +236,7 @@ export class YoloE26Engine {
             "utf8",
             error => {
               if (error) {
+                this.pending.delete(id);
                 clearTimeout(timer);
 
                 reject(error);
