@@ -42,7 +42,7 @@ function normalize(signal) {
   );
 }
 
-function findPeaks(signal, minimumDistance, threshold = 0.35) {
+function findPeaks(signal, minimumDistance, threshold = 0.35, maxPeaks = 8) {
   const candidates = [];
 
   for (let i = 2; i < signal.length - 2; i++) {
@@ -62,7 +62,15 @@ function findPeaks(signal, minimumDistance, threshold = 0.35) {
 
   const accepted = [];
 
+  // A real photographed carton (printed text, tape, logos, JPEG noise) can
+  // produce far more "edge" peaks than there are actual physical seams.
+  // Left uncapped, that turns into a combinatorial explosion once x/y peaks
+  // form a grid of candidate cells below (e.g. 15 x-peaks * 15 y-peaks = up
+  // to 196 candidate cells from a single 3-box stack, observed directly
+  // against a real photo). Keeping only the top-N strongest, well-separated
+  // peaks per axis bounds the grid regardless of how noisy the signal is.
   for (const candidate of candidates) {
+    if (accepted.length >= maxPeaks) break;
     if (
       accepted.every(
         (existing) =>
