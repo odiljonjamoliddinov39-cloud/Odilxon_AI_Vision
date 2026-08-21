@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,8 +9,19 @@ const DEFAULT_MODEL_DIR = fileURLToPath(new URL("../../../models/grounding-dino-
 
 let pipelinePromise;
 
+function assertModelInstalled(modelDirectory) {
+  const modelFile = path.join(modelDirectory, "onnx", "model_quantized.onnx");
+  if (!fs.existsSync(modelFile)) {
+    throw new Error(
+      `Grounding DINO model weights are not installed. Expected ${modelFile}. ` +
+      `Run "npm run model:install-open-vocabulary" to download them (~203 MB, requires internet access).`,
+    );
+  }
+}
+
 async function loadPipeline(modelDirectory) {
   pipelinePromise ||= (async () => {
+    assertModelInstalled(modelDirectory);
     const { env, pipeline, RawImage } = await import("@huggingface/transformers");
     env.allowRemoteModels = false;
     env.allowLocalModels = true;
@@ -20,7 +32,13 @@ async function loadPipeline(modelDirectory) {
       { dtype: "q8", device: "cpu" },
     );
     return { detector, RawImage };
-  })();
+  })().catch((error) => {
+    // Don't memoize a failure: if the model wasn't installed yet, a later
+    // call (after the user runs the install script) should retry instead
+    // of replaying the same rejected promise for the life of the process.
+    pipelinePromise = undefined;
+    throw error;
+  });
   return pipelinePromise;
 }
 

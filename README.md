@@ -22,7 +22,7 @@ Manual Capture Frame copies the latest in-memory frame from the active live sess
 
 ## Vision engines
 
-Analysis runs through a pluggable engine registry (`src/vision/index.js`, `src/vision/engine.js`). `config.json` selects one engine under `vision.engine`, with per-engine options under `vision.engines.<name>`:
+Analysis runs through a pluggable engine registry (`src/vision/index.js`, `src/vision/engine.js`). `config.json` selects one engine under `vision.engine`, with per-engine options under `vision.engines.<name>`. Only the selected engine's module is imported (lazily, inside its factory) — `yolo26`'s `onnxruntime-node` and `grounding_dino`/`modified_dino`'s bundled `onnxruntime-node` (pulled in via `@huggingface/transformers`) are two different native builds that crash with a shared-library version conflict if both load into the same process, so importing every engine eagerly at startup is not safe.
 
 ```json
 "vision": {
