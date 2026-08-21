@@ -3,7 +3,7 @@ import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import { clamp, iou } from "../geometry.js";
+import { clamp, suppressOverlapping } from "../geometry.js";
 import { countIndividualBoxes } from "../stack/edge-instance-counter.js";
 
 const DEFAULT_MODEL_DIR = fileURLToPath(
@@ -45,15 +45,6 @@ async function loadPipeline(modelDirectory) {
   return pipelinePromise;
 }
 
-function nms(items, threshold = 0.45) {
-  const sorted = [...items].sort((a, b) => b.confidence - a.confidence);
-  const kept = [];
-  for (const c of sorted) {
-    if (kept.every((x) => iou(c.bbox, x.bbox) < threshold)) kept.push(c);
-  }
-  return kept;
-}
-
 async function detectDino(buffer, width, height, target, threshold, modelDirectory) {
   const { detector, RawImage } = await loadPipeline(modelDirectory);
   const pixels = await sharp(buffer).toColourspace("srgb").removeAlpha().raw().toBuffer();
@@ -85,6 +76,15 @@ export class ModifiedDinoEngine {
     this.modelDirectory = config.modelDirectory || DEFAULT_MODEL_DIR;
     this.threshold = Number.isFinite(Number(config.threshold)) ? Number(config.threshold) : 0.25;
     this.nmsIou = Number.isFinite(Number(config.nmsIou)) ? Number(config.nmsIou) : 0.42;
+    // Two overlapping DINO root detections of the same physical stack often
+    // differ a lot in size (e.g. one box crops just part of a pile, another
+    // spans the whole thing), which keeps plain IoU low even though one is
+    // essentially contained in the other. rootContainmentThreshold catches
+    // that case so duplicate roots don't each get independently decomposed
+    // and summed, wildly overcounting.
+    this.rootContainmentThreshold = Number.isFinite(Number(config.rootContainmentThreshold))
+      ? Number(config.rootContainmentThreshold)
+      : 0.7;
   }
 
   info() {
@@ -114,7 +114,7 @@ export class ModifiedDinoEngine {
     const started = performance.now();
 
     // Stage 1: DINO finds STACK ROIs only.
-    const roots = nms(
+    const roots = suppressOverlapping(
       await detectDino(
         fullBuffer,
         imageSize.width,
@@ -123,7 +123,8 @@ export class ModifiedDinoEngine {
         threshold,
         this.modelDirectory
       ),
-      this.nmsIou
+      this.nmsIou,
+      this.rootContainmentThreshold
     );
 
     const objects = [];

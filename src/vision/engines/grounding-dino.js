@@ -3,7 +3,7 @@ import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import { clamp } from "../geometry.js";
+import { clamp, suppressOverlapping } from "../geometry.js";
 
 const DEFAULT_MODEL_DIR = fileURLToPath(new URL("../../../models/grounding-dino-tiny-ONNX", import.meta.url));
 
@@ -47,6 +47,10 @@ export class GroundingDinoEngine {
     this.name = "grounding_dino";
     this.modelDirectory = config.modelDirectory || DEFAULT_MODEL_DIR;
     this.threshold = Number.isFinite(Number(config.threshold)) ? Number(config.threshold) : 0.35;
+    this.nmsIou = Number.isFinite(Number(config.nmsIou)) ? Number(config.nmsIou) : 0.45;
+    this.containmentThreshold = Number.isFinite(Number(config.containmentThreshold))
+      ? Number(config.containmentThreshold)
+      : 0.7;
   }
 
   info() {
@@ -83,7 +87,7 @@ export class GroundingDinoEngine {
     const output = await detector(image, [prompt], { threshold });
     const inferenceMs = Math.round(performance.now() - started);
 
-    const objects = output.map((item, index) => {
+    const rawObjects = output.map((item, index) => {
       const box = item.box || {};
       const xmin = clamp(Number(box.xmin), 0, metadata.width);
       const ymin = clamp(Number(box.ymin), 0, metadata.height);
@@ -102,6 +106,11 @@ export class GroundingDinoEngine {
       };
     }).filter((item) => item.bbox.width > 0 && item.bbox.height > 0);
 
+    // The model frequently proposes multiple overlapping boxes for the same
+    // physical object (often at different scales), so raw output is
+    // deduplicated before it becomes the reported count.
+    const objects = suppressOverlapping(rawObjects, this.nmsIou, this.containmentThreshold);
+
     return {
       engine: this.name,
       objects,
@@ -111,7 +120,7 @@ export class GroundingDinoEngine {
         : null,
       evidence: [{ type: "prompt", value: prompt }],
       inferenceMs,
-      debug: debug ? { rawOutputCount: output.length, prompt, threshold } : undefined,
+      debug: debug ? { rawOutputCount: output.length, deduplicatedCount: objects.length, prompt, threshold } : undefined,
     };
   }
 }
