@@ -61,3 +61,14 @@ Every engine's `analyze({ frame, instruction, debug })` accepts a captured frame
 Automatic background sampling is disabled; `src/frame-sampler.js` and `src/store.js` are legacy modules not wired into the server.
 
 `research/groundingdino-upstream/` vendors the upstream Grounding DINO Python source for reference during model research and is not imported by the running app.
+
+## Building a fine-tuning dataset
+
+`yolo26`/`yoloe26` ship as generic checkpoints and don't know what a `baget box` looks like on sight — closed-vocabulary detection needs a model fine-tuned on real labeled photos, and `yoloe26`'s open-vocabulary text prompts consistently undercount dense stacks (validated: recall as low as ~20-30% on stacks of 40+ items). Improving that requires real annotated training data. Workflow:
+
+1. Annotate real photos in [CVAT](https://cvat.ai): draw a box around every individual item, one label class.
+2. Export the task with images included (**Ultralytics YOLO Detection** format bundles images by default; the plain "CVAT for images 1.1" XML export does not unless "Save images" is explicitly checked).
+3. `python3 scripts/prelabel_images.py <new_images_dir> <output_dir>` generates draft candidate boxes for a new batch of *unlabeled* images using `yoloe26`, so annotation in CVAT becomes correcting a draft instead of drawing every box from scratch. Import the output (`obj.names` + `labels/*.txt`, YOLO format) into a CVAT task as pre-annotations. Treat the drafts as a rough starting point, not ground truth — review every image, especially dense stacks, where the model's recall is worst and drafts will be mostly wrong or missing.
+4. Fine-tune a checkpoint (e.g. `yolo26n.pt`) on the combined, human-corrected dataset with `ultralytics`' `model.train()`, holding out a slice of images never seen during training to get an honest per-image accuracy read rather than trusting training loss alone.
+
+Photo variety (different stacks, angles, lighting, densities) matters more than raw image count — many near-duplicate frames of the same stack teach the model little it doesn't already know from the first few.
