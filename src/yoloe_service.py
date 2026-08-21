@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import json
 import base64
 import cv2
@@ -68,8 +68,11 @@ for line in sys.stdin:
     if not line:
         continue
 
+    request_id = None
+
     try:
         request = json.loads(line)
+        request_id = request.get("id")
 
         jpeg = base64.b64decode(
             request["image"]
@@ -83,6 +86,7 @@ for line in sys.stdin:
             jpeg,
             threshold
         )
+        result["id"] = request_id
 
         print(
             json.dumps(result),
@@ -92,6 +96,7 @@ for line in sys.stdin:
     except Exception as exc:
         print(
             json.dumps({
+                "id": request_id,
                 "error": str(exc)
             }),
             flush=True
