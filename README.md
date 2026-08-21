@@ -26,14 +26,14 @@ Analysis runs through a pluggable engine registry (`src/vision/index.js`, `src/v
 
 ```json
 "vision": {
-  "engine": "modified_dino",
-  "threshold": 0.25,
+  "engine": "yoloe26",
+  "threshold": 0.10,
   "debug": false,
   "engines": {
+    "yoloe26": { "threshold": 0.10 },
     "grounding_dino": { "threshold": 0.35 },
     "modified_dino": { "threshold": 0.25, "nmsIou": 0.42 },
-    "yolo26": { "threshold": 0.35 },
-    "yoloe26": { "threshold": 0.10 }
+    "yolo26": { "threshold": 0.35 }
   }
 }
 ```
@@ -44,11 +44,13 @@ Every engine's `analyze({ frame, instruction, debug })` accepts a captured frame
 
 - **`grounding_dino`** (`src/vision/engines/grounding-dino.js`) — stock open-vocabulary detection using Apache-2.0 `onnx-community/grounding-dino-tiny-ONNX` through `@huggingface/transformers`, CPU-only, remote model loading disabled at runtime. Install its local assets once with `npm run model:install-open-vocabulary` (downloads into `models/grounding-dino-tiny-ONNX/`, SHA-256-verified). The runtime target is normalized to Grounding DINO's lowercase, period-terminated query; returned boxes are clamped to the captured image.
 
-- **`modified_dino`** (`src/vision/engines/modified-dino.js`) — the same Grounding DINO model, but each detected stack region is re-analyzed with an edge/seam decomposition pass (`src/vision/stack/edge-instance-counter.js`) that looks for carton boundaries inside the region and splits a stack into individual physical-item counts instead of counting it as one object. It never invents boxes: a stack is only split when at least two non-duplicate child boxes have real edge evidence. See `MODIFIED_DINO_README.md` for the full algorithm and tuning knobs (`childThreshold`, `maxDepth`, `nmsIou`, `margin`, `minCropPixels`). This is the default engine in `config.example.json`. Requires the same `models/grounding-dino-tiny-ONNX/` assets as `grounding_dino`.
+- **`yoloe26`** (`src/vision/engines/yoloe26.js`) — open-vocabulary segmentation via Ultralytics YOLOE, run out-of-process through `src/yoloe_service.py`. Node spawns a persistent Python subprocess and exchanges newline-delimited JSON over stdio (JPEG bytes in, detections out). Requires Python 3 with `ultralytics`, `opencv-python`, and `numpy` installed, plus `yoloe-26n-seg.pt` at the repo root (already included). The Python interpreter defaults to `python3` (`python.exe` on Windows) resolved from `PATH`; override with `vision.engines.yoloe26.python` or the `YOLOE26_PYTHON` environment variable. This is the default engine in `config.example.json`.
+
+- **`grounding_dino`** (`src/vision/engines/grounding-dino.js`) — stock open-vocabulary detection using Apache-2.0 `onnx-community/grounding-dino-tiny-ONNX` through `@huggingface/transformers`, CPU-only, remote model loading disabled at runtime. Install its local assets once with `npm run model:install-open-vocabulary` (downloads into `models/grounding-dino-tiny-ONNX/`, SHA-256-verified). The runtime target is normalized to Grounding DINO's lowercase, period-terminated query; returned boxes are clamped to the captured image.
+
+- **`modified_dino`** (`src/vision/engines/modified-dino.js`) — the same Grounding DINO model, but each detected stack region is re-analyzed with an edge/seam decomposition pass (`src/vision/stack/edge-instance-counter.js`) that looks for carton boundaries inside the region and splits a stack into individual physical-item counts instead of counting it as one object. It never invents boxes: a stack is only split when at least two non-duplicate child boxes have real edge evidence. See `MODIFIED_DINO_README.md` for the full algorithm and tuning knobs (`childThreshold`, `maxDepth`, `nmsIou`, `margin`, `minCropPixels`). Requires the same `models/grounding-dino-tiny-ONNX/` assets as `grounding_dino`.
 
 - **`yolo26`** (`src/vision/engines/yolo26.js`) — local closed-vocabulary detection via `onnxruntime-node`, expecting an ONNX export at `models/yolo26/yolo26n.onnx`. This project ships the Ultralytics checkpoint `yolo26n.pt` at the repo root but **not** an ONNX export — convert it yourself (e.g. `yolo export model=yolo26n.pt format=onnx`) and place the result at that path before selecting this engine.
-
-- **`yoloe26`** (`src/vision/engines/yoloe26.js`) — open-vocabulary segmentation via Ultralytics YOLOE, run out-of-process through `src/yoloe_service.py`. Node spawns a persistent Python subprocess and exchanges newline-delimited JSON over stdio (JPEG bytes in, detections out). Requires Python 3 with `ultralytics`, `opencv-python`, and `numpy` installed, plus `yoloe-26n-seg.pt` at the repo root. The Python interpreter defaults to `python3` (`python.exe` on Windows) resolved from `PATH`; override with `vision.engines.yoloe26.python` or the `YOLOE26_PYTHON` environment variable.
 
 Automatic background sampling is disabled; `src/frame-sampler.js` and `src/store.js` are legacy modules not wired into the server.
 
